@@ -180,8 +180,8 @@ def test_plugin_runtime_debug_endpoints_cover_install_enable_disable(
 
     debug_response = client.get("/api/v1/plugin-runtime/debug", headers=headers)
     assert debug_response.status_code == 200
-    logistics = next(item for item in debug_response.json() if item["plugin_id"] == "alpha")
-    assert logistics["state"] == "enabled"
+    alpha = next(item for item in debug_response.json() if item["plugin_id"] == "alpha")
+    assert alpha["state"] == "enabled"
 
 
 def test_plugin_runtime_state_persists_after_reboot(
@@ -196,14 +196,14 @@ def test_plugin_runtime_state_persists_after_reboot(
     assert enable_response.status_code == 200
 
     rebooted_app = create_app(app.state.settings)
-    logistics = next(
+    alpha = next(
         result
         for result in rebooted_app.state.plugin_runtime.list_results()
         if result.manifest is not None and result.manifest.id == "alpha"
     )
 
-    assert logistics.status == "enabled"
-    assert logistics.registration is not None
+    assert alpha.status == "enabled"
+    assert alpha.registration is not None
 
     with rebooted_app.state.session_factory() as db:
         record = get_plugin_registry_record_by_plugin_id(db, plugin_id="alpha")

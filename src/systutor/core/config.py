@@ -4,7 +4,7 @@ import os
 from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, Field
 
@@ -44,6 +44,54 @@ def _split_csv(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def env_settings_kwargs(env_file: Path | None = DEFAULT_ENV_FILE) -> dict[str, Any]:
+    """Construye kwargs de Settings genericos desde variables de entorno.
+
+    Las aplicaciones huesped pueden reutilizar esta funcion para crear su
+    subclase de Settings con los campos base resueltos desde env, y luego
+    superponer sus opciones propias de negocio.
+    """
+    if env_file is not None:
+        load_env_file(env_file)
+    cors_origins = _split_csv(
+        os.getenv(
+            "SYSTUTOR_CORS_ORIGINS",
+            "http://localhost:5173,http://127.0.0.1:5173",
+        )
+    )
+    return {
+        "app_name": os.getenv("SYSTUTOR_APP_NAME", "SYSTUTOR API"),
+        "env": cast(
+            Literal["local", "development", "test", "production"],
+            os.getenv("SYSTUTOR_ENV", "local"),
+        ),
+        "debug": os.getenv("SYSTUTOR_DEBUG", "false").lower() in {"1", "true", "yes", "on"},
+        "version": os.getenv("SYSTUTOR_VERSION", "0.1.0"),
+        "api_prefix": os.getenv("SYSTUTOR_API_PREFIX", "/api/v1"),
+        "log_level": os.getenv("SYSTUTOR_LOG_LEVEL", "INFO"),
+        "database_url": os.getenv(
+            "SYSTUTOR_DATABASE_URL",
+            "postgresql+psycopg://postgres:postgres@localhost:5432/systutor",
+        ),
+        "redis_url": os.getenv("SYSTUTOR_REDIS_URL", "redis://localhost:6379/0"),
+        "outbox_dispatch_batch_size": int(os.getenv("SYSTUTOR_OUTBOX_DISPATCH_BATCH_SIZE", "100")),
+        "outbox_max_retries": int(os.getenv("SYSTUTOR_OUTBOX_MAX_RETRIES", "3")),
+        "jwt_secret_key": os.getenv("SYSTUTOR_JWT_SECRET_KEY", "change-me"),
+        "jwt_access_token_ttl_minutes": int(
+            os.getenv("SYSTUTOR_JWT_ACCESS_TOKEN_TTL_MINUTES", "60")
+        ),
+        "cors_origins": cors_origins,
+        "plugins_dir": Path(os.getenv("SYSTUTOR_PLUGINS_DIR", str(PROJECT_ROOT / "plugins"))),
+        "seed_demo_tenant_name": os.getenv("SYSTUTOR_SEED_TENANT_NAME", "Demo Tenant"),
+        "seed_demo_tenant_slug": os.getenv("SYSTUTOR_SEED_TENANT_SLUG", "demo"),
+        "seed_demo_branch_name": os.getenv("SYSTUTOR_SEED_BRANCH_NAME", "Main Branch"),
+        "seed_demo_branch_code": os.getenv("SYSTUTOR_SEED_BRANCH_CODE", "MAIN"),
+        "seed_admin_email": os.getenv("SYSTUTOR_SEED_ADMIN_EMAIL", "admin@example.com"),
+        "seed_admin_password": os.getenv("SYSTUTOR_SEED_ADMIN_PASSWORD", "ChangeMe123!"),
+        "seed_admin_full_name": os.getenv("SYSTUTOR_SEED_ADMIN_FULL_NAME", "System Admin"),
+    }
+
+
 class Settings(BaseModel):
     app_name: str = "SYSTUTOR API"
     env: Literal["local", "development", "test", "production"] = "local"
@@ -74,39 +122,4 @@ class Settings(BaseModel):
 def get_settings() -> Settings:
     if _settings_factory is not None:
         return _settings_factory()
-    load_env_file()
-    cors_origins = _split_csv(
-        os.getenv(
-            "SYSTUTOR_CORS_ORIGINS",
-            "http://localhost:5173,http://127.0.0.1:5173",
-        )
-    )
-    return Settings(
-        app_name=os.getenv("SYSTUTOR_APP_NAME", "SYSTUTOR API"),
-        env=cast(
-            Literal["local", "development", "test", "production"],
-            os.getenv("SYSTUTOR_ENV", "local"),
-        ),
-        debug=os.getenv("SYSTUTOR_DEBUG", "false").lower() in {"1", "true", "yes", "on"},
-        version=os.getenv("SYSTUTOR_VERSION", "0.1.0"),
-        api_prefix=os.getenv("SYSTUTOR_API_PREFIX", "/api/v1"),
-        log_level=os.getenv("SYSTUTOR_LOG_LEVEL", "INFO"),
-        database_url=os.getenv(
-            "SYSTUTOR_DATABASE_URL",
-            "postgresql+psycopg://postgres:postgres@localhost:5432/systutor",
-        ),
-        redis_url=os.getenv("SYSTUTOR_REDIS_URL", "redis://localhost:6379/0"),
-        outbox_dispatch_batch_size=int(os.getenv("SYSTUTOR_OUTBOX_DISPATCH_BATCH_SIZE", "100")),
-        outbox_max_retries=int(os.getenv("SYSTUTOR_OUTBOX_MAX_RETRIES", "3")),
-        jwt_secret_key=os.getenv("SYSTUTOR_JWT_SECRET_KEY", "change-me"),
-        jwt_access_token_ttl_minutes=int(os.getenv("SYSTUTOR_JWT_ACCESS_TOKEN_TTL_MINUTES", "60")),
-        cors_origins=cors_origins,
-        plugins_dir=Path(os.getenv("SYSTUTOR_PLUGINS_DIR", str(PROJECT_ROOT / "plugins"))),
-        seed_demo_tenant_name=os.getenv("SYSTUTOR_SEED_TENANT_NAME", "Demo Tenant"),
-        seed_demo_tenant_slug=os.getenv("SYSTUTOR_SEED_TENANT_SLUG", "demo"),
-        seed_demo_branch_name=os.getenv("SYSTUTOR_SEED_BRANCH_NAME", "Main Branch"),
-        seed_demo_branch_code=os.getenv("SYSTUTOR_SEED_BRANCH_CODE", "MAIN"),
-        seed_admin_email=os.getenv("SYSTUTOR_SEED_ADMIN_EMAIL", "admin@example.com"),
-        seed_admin_password=os.getenv("SYSTUTOR_SEED_ADMIN_PASSWORD", "ChangeMe123!"),
-        seed_admin_full_name=os.getenv("SYSTUTOR_SEED_ADMIN_FULL_NAME", "System Admin"),
-    )
+    return Settings(**env_settings_kwargs())

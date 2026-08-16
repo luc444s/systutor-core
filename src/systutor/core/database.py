@@ -16,12 +16,12 @@ from systutor.core.config import Settings
 
 
 class Base(DeclarativeBase):
-    """Base declarativa compartida del backend."""
+    """Shared declarative base for the backend."""
 
 
 def register_model_metadata() -> None:
-    # Carga todos los modelos del kernel para que las FKs se resuelvan
-    # tambien fuera de Alembic o pytest.
+    # Load all kernel models so FKs resolve
+    # outside Alembic or pytest as well.
     import systutor.kernel.models  # noqa: F401
 
 
@@ -58,7 +58,7 @@ def build_session_factory(settings: Settings) -> sessionmaker[Session]:
 
 
 def build_async_engine(settings: Settings) -> AsyncEngine | None:
-    """Crea engine async solo para PostgreSQL. SQLite no soporta async."""
+    """Build an async engine for PostgreSQL only. SQLite has no async support."""
     if not settings.database_url.startswith("postgresql"):
         return None
     register_model_metadata()

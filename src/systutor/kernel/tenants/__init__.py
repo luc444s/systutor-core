@@ -1,1 +1,1 @@
-"""Espacio reservado para tenants del kernel."""
+"""Kernel tenants module."""

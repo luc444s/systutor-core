@@ -1,82 +1,91 @@
 # systutor-core
 
-Kernel open source de SYSTUTOR. Framework de infraestructura para aplicaciones
-multi-tenant con plugins de negocio. Licencia MIT.
+Kernel for SYSTUTOR: an infrastructure framework for multi-tenant
+applications whose business logic lives in pluggable modules. Distributed
+under the MIT license.
 
-## Que incluye
+## Scope
 
-- **auth**: JWT, usuarios, password hashing, sesion de usuario.
-- **RBAC**: permisos declarativos (catalogo global) y roles por tenant.
-- **tenancy**: aislamiento activo por `tenant_id` + `branch_id`.
-- **auditoria**: `audit_log` persistente con actor, entidad, resultado y correlacion.
-- **eventos**: event bus con `event_log` y `event_outbox`, dispatcher reutilizable
-  sin Redis y worker Dramatiq.
-- **runtime de plugins**: descubrimiento por manifiesto, validacion estricta,
-  dependencias, estados (discovered → validated → installed → enabled),
-  migraciones propias por plugin y hooks de ciclo de vida.
-- **documentos**: versionado de documentos por entidad con render PDF y
-  descarga firmada (signed URLs).
-- **firmas**: sesiones de firma con evidencia por entidad.
-- **SDK**: `systutor.sdk` para construir plugins (contexto, permisos, eventos, rutas).
-- **contratos**: `systutor.contracts` con contratos compartidos de eventos, auditoria y plugins.
+The kernel provides:
 
-## Que NO incluye (por diseno)
+- **Authentication**: JWT issuance and validation, user management,
+  password hashing.
+- **RBAC**: declarative permission catalog with per-tenant roles.
+- **Multi-tenancy**: active isolation by `tenant_id` and `branch_id`.
+- **Audit**: persistent `audit_log` with actor, entity, result, and
+  correlation identifiers.
+- **Events**: in-process event bus with persistent `event_log` and
+  `event_outbox`, a Redis-free testable dispatcher, and a Dramatiq worker.
+- **Plugin runtime**: manifest-based discovery, strict validation,
+  dependency resolution, lifecycle states (discovered, validated,
+  installed, enabled, disabled, failed, uninstalled), per-plugin
+  migrations, and lifecycle hooks.
+- **Documents**: per-entity document versioning with PDF rendering and
+  signed download URLs.
+- **Signatures**: signature sessions with evidence records.
+- **SDK** (`systutor.sdk`): plugin context, permission/event/route
+  registration.
+- **Contracts** (`systutor.contracts`): shared event, audit, and plugin
+  contracts.
 
-- Ningun dominio de negocio. Los modulos de negocio viven en plugins externos
-  que declaran identidad, version, permisos, eventos y migraciones propias.
-- Migraciones del negocio. Este repo trae el baseline de modelos; las
-  aplicaciones huesped mantienen su propio arbol Alembic.
+The kernel deliberately contains no business domain logic. Business
+modules are external plugins that declare identity, version, permissions,
+events, and their own migrations.
 
-## Estructura
+## Repository layout
 
 ```text
 src/systutor/
 ├── kernel/       auth, audit, documents, events, permissions, plugins,
 │                 signatures, tasks, tenants
-├── core/         config, database, errors, lifecycle, logging, pagination,
-│                 request_context, cache
-├── api/          deps, seed, v1 (management APIs + system)
-├── contracts/    contratos compartidos
-└── sdk/          SDK de plugins
-app/              aplicacion API ejecutable de referencia
-tests/            suite del kernel (SQLite, sin plugins de negocio)
+├── core/         config, database, errors, lifecycle, logging,
+│                 pagination, request_context, cache
+├── api/          dependencies, demo seed, v1 management APIs
+├── contracts/    shared contracts
+└── sdk/          plugin SDK
+app/              reference FastAPI application
+tests/            kernel test suite (SQLite, no business plugins)
 ```
 
-## Instalacion
+## Installation
+
+Python 3.12 or newer.
 
 ```bash
 python3 -m pip install -e ".[dev]"
 ```
 
-## Configuracion
+## Configuration
 
-Variables de entorno (prefijo `SYSTUTOR_`):
+Settings are resolved from environment variables prefixed with
+`SYSTUTOR_`. A `.env` file at the repository root is loaded automatically;
+see `.env.example`.
 
-| Variable | Default | Descripcion |
+| Variable | Default | Purpose |
 |---|---|---|
-| `SYSTUTOR_DATABASE_URL` | `postgresql+psycopg://postgres:postgres@localhost:5432/systutor` | URL SQLAlchemy |
-| `SYSTUTOR_REDIS_URL` | `redis://localhost:6379/0` | Redis para cache y worker |
-| `SYSTUTOR_JWT_SECRET_KEY` | `change-me` | Clave JWT (obligatoria en produccion) |
-| `SYSTUTOR_PLUGINS_DIR` | `<repo>/plugins` | Directorio de plugins |
-| `SYSTUTOR_CORS_ORIGINS` | `http://localhost:5173,...` | Origenes CORS separados por coma |
-| `SYSTUTOR_API_PREFIX` | `/api/v1` | Prefijo de la API |
+| `SYSTUTOR_DATABASE_URL` | `postgresql+psycopg://postgres:postgres@localhost:5432/systutor` | SQLAlchemy database URL |
+| `SYSTUTOR_REDIS_URL` | `redis://localhost:6379/0` | Redis for cache and worker |
+| `SYSTUTOR_JWT_SECRET_KEY` | `change-me` | JWT signing key (required in production) |
+| `SYSTUTOR_PLUGINS_DIR` | `<repo>/plugins` | Plugin discovery directory |
+| `SYSTUTOR_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated CORS origins |
+| `SYSTUTOR_API_PREFIX` | `/api/v1` | API prefix |
 
-El `.env` en la raiz del proyecto se carga automaticamente. Ver `.env.example`.
+## Host applications
 
-## Aplicacion huesped
-
-Una aplicacion huesped (app privada con plugins de negocio) usa el kernel asi:
+A host application adds its own settings by subclassing `Settings` and
+registering a factory before the first call to `get_settings()`:
 
 ```python
 from fastapi import FastAPI
+
 from systutor.core.config import Settings, get_settings, register_settings_factory
 from systutor.core.lifecycle import bootstrap_app_state, lifespan
 
-# 1. (Opcional) subclase de Settings con opciones propias del negocio
-class AppSettings(Settings):
-    extra_business_flag: bool = True
 
-# 2. Registrar la factory ANTES de la primera llamada a get_settings()
+class AppSettings(Settings):
+    business_flag: bool = True
+
+
 register_settings_factory(AppSettings)
 
 app = FastAPI(lifespan=lifespan)
@@ -84,45 +93,61 @@ settings = get_settings()
 bootstrap_app_state(app, settings)
 ```
 
-Los plugins se descubren desde `settings.plugins_dir` y sus routers se montan
-en `<api_prefix>/plugins/<plugin_id>` al habilitarse.
+All kernel internals obtain configuration through `get_settings()`, so
+host-specific options propagate without the kernel depending on any
+business domain. Host applications that need to reuse the base
+environment resolution can build their subclass with
+`env_settings_kwargs()`.
 
-## Plugin minimo
+Plugins are discovered from `settings.plugins_dir`. Enabled plugin routes
+are mounted under `<api_prefix>/plugins/<plugin_id>`.
+
+## Plugin contract
+
+A plugin is a directory containing a `plugin.json` manifest:
 
 ```json
 {
-  "id": "mi-modulo",
-  "name": "Mi Modulo",
+  "id": "example",
+  "name": "Example",
   "version": "0.1.0",
   "api_version": "1",
   "requires": [],
   "backend_entrypoint": "backend.plugin:register",
   "frontend_entrypoint": "frontend/register.ts",
-  "permissions": ["mi-modulo.documento.read"],
-  "events": ["mi-modulo.documento.creado"]
+  "permissions": ["example.record.read"],
+  "events": ["example.record.created"]
 }
 ```
+
+The backend entrypoint exposes a `register` function:
 
 ```python
 from systutor.sdk import PluginContext
 
+
 def register(context: PluginContext) -> None:
-    context.register_permissions(["mi-modulo.documento.read"])
-    context.register_events(["mi-modulo.documento.creado"])
+    context.register_permissions(["example.record.read"])
+    context.register_events(["example.record.created"])
 ```
 
-## Ejecutar la API de referencia
+Permissions must be namespaced by plugin id. Migrations live in
+`migrations/` and are applied in order when the plugin is enabled.
+
+## Reference application
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
+Endpoints:
+
 - `GET /api/v1/system/health`
 - `GET /api/v1/system/ready`
 - `POST /api/v1/auth/login`
-- `GET /api/v1/core/users` (requiere rol con `core.users.read`)
+- `GET /api/v1/core/users` (requires `core.users.read`)
 
-## Seed demo
+### Demo seed
 
 ```bash
 python3 -c "
@@ -132,14 +157,14 @@ from systutor.core.database import build_session_factory
 
 settings = app.state.settings
 with build_session_factory(settings)() as db:
-    result = seed_demo_data(db, settings, app.state.plugin_runtime.list_results())
-    print(result)
+    print(seed_demo_data(db, settings, app.state.plugin_runtime.list_results()))
 "
 ```
 
-Credenciales por defecto: `admin@example.com` / `ChangeMe123!` (cambiar en produccion).
+Default credentials: `admin@example.com` / `ChangeMe123!` (change in
+production).
 
-## Pruebas
+## Development
 
 ```bash
 python3 -m pytest tests -q
@@ -147,6 +172,14 @@ ruff check .
 python3 -m pyright
 ```
 
-## Licencia
+Tests run on SQLite with `TestClient`. Test plugins are generated in
+temporary directories (`tests/conftest.py`).
 
-MIT. Ver `LICENSE`.
+## API stability
+
+The `systutor.*` namespace is the public API. Signature changes are
+breaking for host applications and must be versioned as dependencies.
+
+## License
+
+MIT. See `LICENSE`.

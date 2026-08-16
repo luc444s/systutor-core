@@ -156,11 +156,11 @@ def seed_demo_data(
     settings: Settings,
     plugins: Sequence[LoadedPlugin],
 ) -> dict[str, str]:
-    """Crea tenant, branch, rol admin y usuario admin de demostracion.
+    """Create demo tenant, branch, admin role, and admin user.
 
-    Idempotente: si los registros ya existen, los reutiliza. El rol admin
-    recibe todos los permisos base del kernel mas los permisos declarados
-    por los plugins cargados.
+    Idempotent: existing records are reused. The admin role receives all
+    base kernel permissions plus the permissions declared by the loaded
+    plugins.
     """
     tenant = _get_or_create_tenant(db, settings)
     branch = _get_or_create_branch(db, tenant, settings)

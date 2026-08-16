@@ -1,1 +1,1 @@
-"""Runtime y contratos de plugins."""
+"""Plugin runtime and contracts."""

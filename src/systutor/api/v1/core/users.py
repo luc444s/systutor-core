@@ -17,10 +17,9 @@ from systutor.api.v1.core.schemas import (
     CoreUserUpdateRequest,
 )
 from systutor.api.v1.core.services.users import (
-    CATEGORY_LABELS,
-    USER_CATEGORY_MAP,
     create_core_user,
     get_core_user,
+    get_user_categories,
     list_core_users,
     set_core_user_active,
     update_core_user,
@@ -54,8 +53,8 @@ def _resolve_branch(db: Session, *, tenant_id: str, branch_id: str | None):
 @router.get("/categories", response_model=list[CoreUserCategoryRead])
 def list_user_categories() -> list[CoreUserCategoryRead]:
     return [
-        CoreUserCategoryRead(value=key, label=CATEGORY_LABELS.get(key, key))
-        for key in USER_CATEGORY_MAP
+        CoreUserCategoryRead(value=key, label=label)
+        for key, (label, _role_names) in get_user_categories().items()
     ]
 
 

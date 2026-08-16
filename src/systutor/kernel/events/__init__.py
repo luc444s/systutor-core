@@ -1,1 +1,1 @@
-"""Espacio reservado para eventos del kernel."""
+"""Kernel events module."""

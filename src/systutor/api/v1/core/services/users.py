@@ -20,19 +20,30 @@ from systutor.kernel.permissions.service import (
 from systutor.kernel.tenants.models import Branch
 from systutor.kernel.tenants.service import list_user_warehouse_ids, replace_user_warehouse_ids
 
-# Unica fuente de verdad para categorias de usuario.
-# clave -> (label display, roles auto-asignados al crear usuario con esa categoria)
-USER_CATEGORIES: dict[str, tuple[str, list[str]]] = {
-    "driver": ("Conductor", ["driver"]),
-}
+# User categories are host-defined. The host application registers each
+# category with its display label and the roles auto-assigned on creation.
+# key -> (display label, roles auto-assigned when creating a user with that category)
+_USER_CATEGORIES: dict[str, tuple[str, list[str]]] = {}
 
-USER_CATEGORY_MAP: dict[str, list[str]] = {
-    key: role_names for key, (_label, role_names) in USER_CATEGORIES.items()
-}
 
-CATEGORY_LABELS: dict[str, str] = {
-    key: label for key, (label, _role_names) in USER_CATEGORIES.items()
-}
+def register_user_category(key: str, label: str, role_names: list[str]) -> None:
+    """Register a user category for the host application."""
+    _USER_CATEGORIES[key] = (label, list(role_names))
+
+
+def get_user_categories() -> dict[str, tuple[str, list[str]]]:
+    """Return the registered user categories."""
+    return dict(_USER_CATEGORIES)
+
+
+def get_user_category_map() -> dict[str, list[str]]:
+    """Return category keys mapped to their auto-assigned role names."""
+    return {key: role_names for key, (_label, role_names) in _USER_CATEGORIES.items()}
+
+
+def get_category_labels() -> dict[str, str]:
+    """Return category keys mapped to their display labels."""
+    return {key: label for key, (label, _role_names) in _USER_CATEGORIES.items()}
 
 
 def serialize_core_user(db: Session, user: User) -> dict[str, object]:
@@ -77,8 +88,8 @@ def create_core_user(
     action_context: CoreActionContext,
 ) -> dict[str, object]:
     resolved_role_ids = list(role_ids)
-    if category and category in USER_CATEGORY_MAP:
-        category_role_names = USER_CATEGORY_MAP[category]
+    category_role_names = get_user_category_map().get(category) if category else None
+    if category_role_names:
         category_roles = list_roles_by_names_for_tenant(
             db, tenant_id=tenant_id, role_names=category_role_names
         )

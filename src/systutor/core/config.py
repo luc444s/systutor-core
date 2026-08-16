@@ -29,12 +29,12 @@ def load_env_file(env_file: Path = DEFAULT_ENV_FILE) -> None:
 
 
 def register_settings_factory(factory: Callable[[], Settings]) -> None:
-    """Permite a la aplicacion huesped inyectar una subclase de Settings.
+    """Register a factory that provides a Settings subclass for the host app.
 
-    La app huesped debe registrar la factory antes de la primera llamada a
-    get_settings(). Toda la infraestructura del kernel obtiene la configuracion
-    mediante get_settings(), por lo que la factory propaga las opciones
-    especificas de la aplicacion sin acoplar el kernel a dominios de negocio.
+    The host application must register the factory before the first call to
+    get_settings(). Kernel internals obtain configuration through
+    get_settings(), so the factory propagates host-specific options without
+    coupling the kernel to business domains.
     """
     global _settings_factory
     _settings_factory = factory
@@ -45,11 +45,11 @@ def _split_csv(value: str) -> list[str]:
 
 
 def env_settings_kwargs(env_file: Path | None = DEFAULT_ENV_FILE) -> dict[str, Any]:
-    """Construye kwargs de Settings genericos desde variables de entorno.
+    """Build generic Settings kwargs from environment variables.
 
-    Las aplicaciones huesped pueden reutilizar esta funcion para crear su
-    subclase de Settings con los campos base resueltos desde env, y luego
-    superponer sus opciones propias de negocio.
+    Host applications can reuse this function to create their Settings
+    subclass with base fields resolved from the environment, then overlay
+    their own business options.
     """
     if env_file is not None:
         load_env_file(env_file)

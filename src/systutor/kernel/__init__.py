@@ -1,1 +1,1 @@
-"""Kernel minimo del backend."""
+"""Backend kernel."""

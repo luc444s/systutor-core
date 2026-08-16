@@ -1,1 +1,1 @@
-"""Espacio reservado para auth del kernel."""
+"""Kernel auth module."""

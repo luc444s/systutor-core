@@ -1,1 +1,1 @@
-"""Espacio reservado para permisos del kernel."""
+"""Kernel permissions module."""

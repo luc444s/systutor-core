@@ -55,6 +55,13 @@ Python 3.12 or newer.
 python3 -m pip install -e ".[dev]"
 ```
 
+### Migrations
+
+```bash
+alembic -c alembic.ini upgrade head
+alembic -c alembic.ini history
+```
+
 ## Configuration
 
 Settings are resolved from environment variables prefixed with

@@ -77,6 +77,21 @@ see `.env.example`.
 | `SYSTUTOR_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated CORS origins |
 | `SYSTUTOR_API_PREFIX` | `/api/v1` | API prefix |
 
+### Connection pool
+
+`build_engine` and `build_async_engine` set `pool_pre_ping=True` and
+`pool_timeout=3`. The pool size is left at the SQLAlchemy default
+(`pool_size=5` + `max_overflow=10`, so 15 connections per engine per process);
+size it explicitly when running multiple workers, since
+`workers x (pool_size + max_overflow)` must stay below the server's
+`max_connections`.
+
+`pool_timeout=3` is deliberately short. Under contention the default of 30s turns
+a saturated pool into requests that hang for 30s before failing, which reads to
+clients as a dead server. Failing in 3s lets callers retry. Raise it only if you
+have measured that checkout waits, not queueing at the endpoint, dominate the
+tail.
+
 ## Host applications
 
 A host application adds its own settings by subclassing `Settings` and

@@ -41,6 +41,7 @@ def build_engine(settings: Settings) -> Engine:
     return create_engine(
         settings.database_url,
         pool_pre_ping=True,
+        pool_timeout=3,
         future=True,
         connect_args=connect_args,
     )
@@ -66,6 +67,7 @@ def build_async_engine(settings: Settings) -> AsyncEngine | None:
     return create_async_engine(
         async_url,
         pool_pre_ping=True,
+        pool_timeout=3,
         future=True,
     )
 

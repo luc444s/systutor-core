@@ -1,5 +1,52 @@
 # ruff: noqa: B008
 
+"""Pre-namespaced core API, kept for backwards compatibility.
+
+This router serves the ORIGINAL flat core paths (`/api/v1/users`,
+`/api/v1/roles`, `/api/v1/branches`, ...) and coexists with the modular routers
+in this package, which serve the namespaced paths (`/api/v1/core/users`,
+`/api/v1/core/roles`, ...). The two do not collide: there is no
+(method, path) defined twice across them.
+
+It is mounted FIRST in `core/__init__.py`. That ordering is not meaningful here
+only because the path sets are disjoint; it would shadow the modular routers if
+a flat path were ever reintroduced.
+
+It is kept deliberately. As of 2026-09-25 no in-repo consumer calls it:
+`apps/web` and `android-g5` are fully migrated to `/core/...`. But external
+systems may still depend on it, so it must keep working.
+
+DO NOT USE THESE ROUTES. Not in new code, not in new modules, not in new
+plugins, not in examples, docs, tests or tooling. The namespaced API in this
+package (`/api/v1/core/...`) is the supported one and is a strict superset of
+what most of these routes do. Anything new targets `/core/...`.
+
+These flat paths are frozen: frozen against new routes, and frozen against
+fixes that would only land there. The namespaced router is where new capability
+and new behaviour go. If a flat path looks like the only option for something,
+that is a gap in the namespaced API, not a reason to extend this file.
+
+Eight routes here have NO equivalent under `/core/...` and therefore cannot be
+removed without losing capability. Do not delete this file without first
+checking each one:
+
+  POST   /api/v1/users/{user_id}/roles
+  DELETE /api/v1/users/{user_id}/roles/{role_id}
+  GET    /api/v1/permissions/{permission_id}
+  GET    /api/v1/audit-logs
+  GET    /api/v1/audit-logs/{audit_log_id}
+  GET    /api/v1/plugin-runtime/debug
+  POST   /api/v1/plugin-runtime/{plugin_id}/migrate/downgrade
+  POST   /api/v1/plugin-runtime/{plugin_id}/migrate/rollback
+
+Note that plugin migration DOWNGRADE and ROLLBACK exist only here; the namespaced
+`POST /core/plugins/{plugin_id}/migrate` is upgrade-only. And the audit-log read
+API exists only here, with no namespaced counterpart.
+
+This file exceeds the 600-line ceiling in the kernel AGENTS.md. That threshold is
+known and accepted for this module; it is not an oversight.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime

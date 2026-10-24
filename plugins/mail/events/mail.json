@@ -1,6 +1,0 @@
-{
-  "events": [
-    {"name": "mail.account.created", "description": "A mail account was created"},
-    {"name": "mail.account.password_changed", "description": "A mail account password was changed"}
-  ]
-}

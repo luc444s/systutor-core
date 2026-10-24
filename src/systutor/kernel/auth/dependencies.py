@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import NoReturn
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -60,6 +59,12 @@ def get_current_user(
     token_email = _require_string_claim(payload, "email")
     token_tenant_id = _require_string_claim(payload, "tenant_id")
     token_branch_id = _require_optional_string_claim(payload, "branch_id")
+    token_is_superadmin = payload.get("is_superadmin")
+    if not isinstance(token_is_superadmin, bool):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token is_superadmin",
+        )
 
     user = get_user_by_id(db, subject)
     if user is None or not user.is_active:
@@ -74,6 +79,11 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token branch mismatch",
         )
+    if user.is_superadmin != token_is_superadmin:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token privilege mismatch",
+        )
     if not validate_user_branch_scope(db, user):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -83,6 +93,7 @@ def get_current_user(
     request.state.current_user_id = user.id
     request.state.current_tenant_id = user.tenant_id
     request.state.current_branch_id = user.branch_id
+    request.state.is_superadmin = user.is_superadmin
     return user
 
 
@@ -119,71 +130,38 @@ def get_current_branch_id(
     return tenant_context.current_branch_id
 
 
-def require_permission(
-    permission_name: str,
-    *,
-    platform_only: bool = False,
-) -> Callable[..., User]:
-    """Authorize a route by permission, optionally for the platform admin only.
-
-    `platform_only=True` requires `core.platform.admin` in addition to
-    `permission_name`. A tenant role that was accidentally granted the plugin
-    permission still gets 403, so a plugin never inspects a role name.
-    """
-
+def require_permission(permission_name: str) -> Callable[..., User]:
     def dependency(
         request: Request,
         db: Session = Depends(get_db_session),
         current_user: User = Depends(get_current_user),
         tenant_context: TenantContext = Depends(get_current_tenant_context),
     ) -> User:
-        if platform_only and not tenant_context.is_platform:
-            _deny_permission(
-                db,
-                request,
-                tenant_context,
-                permission_name,
-                extra_details={"platform_only": True},
-            )
         if tenant_context.has_permission(permission_name):
             return current_user
 
-        _deny_permission(db, request, tenant_context, permission_name)
+        record_audit(
+            db,
+            tenant_id=tenant_context.current_tenant_id,
+            branch_id=tenant_context.current_branch_id,
+            actor_user_id=tenant_context.current_user_id,
+            actor_type="user",
+            module="core",
+            action="permission.denied",
+            entity_type="permission",
+            entity_id=permission_name,
+            result="denied",
+            correlation_id=getattr(request.state, "correlation_id", None),
+            request_id=getattr(request.state, "request_id", None),
+            details={
+                "permission": permission_name,
+                "tenant_id": tenant_context.current_tenant_id,
+            },
+        )
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
 
     return dependency
-
-
-def _deny_permission(
-    db: Session,
-    request: Request,
-    tenant_context: TenantContext,
-    permission_name: str,
-    *,
-    extra_details: dict[str, object] | None = None,
-) -> NoReturn:
-    details: dict[str, object] = {
-        "permission": permission_name,
-        "tenant_id": tenant_context.current_tenant_id,
-    }
-    if extra_details:
-        details.update(extra_details)
-    record_audit(
-        db,
-        tenant_id=tenant_context.current_tenant_id,
-        branch_id=tenant_context.current_branch_id,
-        actor_user_id=tenant_context.current_user_id,
-        actor_type="user",
-        module="core",
-        action="permission.denied",
-        entity_type="permission",
-        entity_id=permission_name,
-        result="denied",
-        correlation_id=getattr(request.state, "correlation_id", None),
-        request_id=getattr(request.state, "request_id", None),
-        details=details,
-    )
-    db.commit()
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
 
 
 def require_any_permission(*permission_names: str) -> Callable[..., User]:
@@ -193,7 +171,7 @@ def require_any_permission(*permission_names: str) -> Callable[..., User]:
         current_user: User = Depends(get_current_user),
         tenant_context: TenantContext = Depends(get_current_tenant_context),
     ) -> User:
-        if any(
+        if tenant_context.is_superadmin or any(
             tenant_context.has_permission(permission_name) for permission_name in permission_names
         ):
             return current_user

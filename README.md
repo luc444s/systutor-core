@@ -79,18 +79,54 @@ see `.env.example`.
 
 ### Connection pool
 
-`build_engine` and `build_async_engine` set `pool_pre_ping=True` and
-`pool_timeout=3`. The pool size is left at the SQLAlchemy default
-(`pool_size=5` + `max_overflow=10`, so 15 connections per engine per process);
-size it explicitly when running multiple workers, since
-`workers x (pool_size + max_overflow)` must stay below the server's
-`max_connections`.
+`build_engine` and `build_async_engine` use configurable pool settings:
 
-`pool_timeout=3` is deliberately short. Under contention the default of 30s turns
-a saturated pool into requests that hang for 30s before failing, which reads to
-clients as a dead server. Failing in 3s lets callers retry. Raise it only if you
-have measured that checkout waits, not queueing at the endpoint, dominate the
-tail.
+| Variable | Default | Purpose |
+|---|---|---|
+| `SYSTUTOR_DB_POOL_SIZE` | `10` | Persistent connections per engine |
+| `SYSTUTOR_DB_MAX_OVERFLOW` | `10` | Extra connections under burst |
+| `SYSTUTOR_DB_POOL_TIMEOUT` | `15` | Seconds to wait for a free connection |
+| `SYSTUTOR_DB_POOL_RECYCLE` | `1800` | Recycle connections after N seconds |
+| `SYSTUTOR_DB_POOL_PRE_PING` | `true` | Validate connections on checkout |
+| `SYSTUTOR_DB_POOL_USE_LIFO` | `true` | Reuse the most recently used connection |
+| `SYSTUTOR_DB_ASYNC_POOL_SIZE` | `2` | Async pool size (readiness) |
+| `SYSTUTOR_DB_ASYNC_MAX_OVERFLOW` | `2` | Async pool overflow (readiness) |
+| `SYSTUTOR_DB_STATEMENT_TIMEOUT_MS` | `5000` | PostgreSQL `statement_timeout` |
+| `SYSTUTOR_THREADPOOL_TOKENS` | `40` | AnyIO threadpool tokens for sync endpoints |
+| `SYSTUTOR_AUTH_CACHE_ENABLED` | `true` | Cache authenticated tenant context |
+| `SYSTUTOR_AUTH_CACHE_TTL_SECONDS` | `30` | TTL for the auth/permission cache |
+
+Sizing rule:
+
+```text
+workers x (pool_size + max_overflow) <= PostgreSQL max_connections - reserved
+```
+
+With multiple workers or instances, use PgBouncer (transaction pooling) or
+reduce the per-worker pool. The defaults (10 + 10 = 20 per process) leave room
+for four processes on the default PostgreSQL `max_connections=100`.
+
+`get_db_session` is an async dependency even though the SQLAlchemy session is
+sync: its cleanup runs on the event loop, so a saturated threadpool cannot
+queue the `session.close()` behind requests waiting for a connection. This
+prevents the pool deadlock that appears under high concurrency.
+
+When the pool is saturated, the API returns **503 `database_busy` with
+`Retry-After: 1`** instead of a generic 500.
+
+`GET /system/health/live` is an async liveness probe that never touches the
+database. `GET /system/ready` uses the async engine to check PostgreSQL, so a
+saturated sync threadpool does not produce false readiness failures.
+
+### Auth cache
+
+`build_tenant_context` caches permissions and warehouse scope per user for
+`SYSTUTOR_AUTH_CACHE_TTL_SECONDS`. The cache uses Redis when available and the
+in-memory backend otherwise. Role and user updates bump a per-tenant version,
+invalidating all cached contexts for that tenant without scanning keys.
+
+Role creation intentionally does not invalidate the cache: creating a role does
+not change any existing assignment.
 
 ## Host applications
 

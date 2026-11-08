@@ -32,13 +32,19 @@ def record_event(
     payload: dict,
     metadata_json: dict,
     version: str = "1",
+    validate_scope: bool = True,
 ) -> EventLog:
-    effective_tenant_id, effective_branch_id = resolve_tenant_scope(
-        db,
-        tenant_id=tenant_id,
-        branch_id=branch_id,
-        actor_user_id=actor_user_id,
-    )
+    if validate_scope:
+        effective_tenant_id, effective_branch_id = resolve_tenant_scope(
+            db,
+            tenant_id=tenant_id,
+            branch_id=branch_id,
+            actor_user_id=actor_user_id,
+        )
+    else:
+        # El caller ya autenticó y resolvió el scope (TenantContext).
+        effective_tenant_id, effective_branch_id = tenant_id, branch_id
+
     event = EventLog(
         event_name=event_name,
         version=version,
@@ -72,7 +78,9 @@ def create_outbox_event(db: Session, *, event: EventLog, status: str = "pending"
     return outbox
 
 
-def emit_event(db: Session, *, event: EventContract) -> EventEmissionResult:
+def emit_event(
+    db: Session, *, event: EventContract, validate_scope: bool = True
+) -> EventEmissionResult:
     event_data = event.model_copy(
         update={
             "correlation_id": event.correlation_id or str(uuid4()),
@@ -93,6 +101,7 @@ def emit_event(db: Session, *, event: EventContract) -> EventEmissionResult:
         payload=dict(event_data.payload),
         metadata_json=dict(event_data.metadata),
         version=event_data.version,
+        validate_scope=validate_scope,
     )
     outbox = create_outbox_event(db, event=event_log)
     return EventEmissionResult(event_log=event_log, outbox=outbox)

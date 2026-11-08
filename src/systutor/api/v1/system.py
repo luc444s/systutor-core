@@ -2,14 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import anyio.to_thread
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from systutor.api.deps import get_db_session, get_plugin_registry, get_settings_dep
+from systutor.api.deps import get_db_session, get_plugin_registry
 from systutor.core.config import Settings
 from systutor.core.database import check_database_connection
-from systutor.core.lifecycle import ensure_session_factory
+from systutor.core.lifecycle import ensure_async_session_factory, ensure_session_factory
 from systutor.kernel.auth.dependencies import (
     get_current_tenant_context,
     require_any_permission,
@@ -72,25 +74,36 @@ def _health_payload(settings: Settings) -> HealthResponse:
 
 
 @router.get("/health", response_model=HealthResponse)
-def health(settings: Settings = Depends(get_settings_dep)) -> HealthResponse:
-    return _health_payload(settings)
+async def health(request: Request) -> HealthResponse:
+    # Liveness: nunca toca la base de datos ni el threadpool sync.
+    return _health_payload(request.app.state.settings)
 
 
 @router.get("/health/live", response_model=HealthResponse)
-def live_alias(settings: Settings = Depends(get_settings_dep)) -> HealthResponse:
-    return _health_payload(settings)
+async def live_alias(request: Request) -> HealthResponse:
+    return _health_payload(request.app.state.settings)
 
 
 @router.get("/ready", response_model=ReadyResponse)
-def ready(
+async def ready(
     request: Request,
-    settings: Settings = Depends(get_settings_dep),
     plugin_registry: PluginManifestRegistry = Depends(get_plugin_registry),
 ) -> ReadyResponse:
+    settings: Settings = request.app.state.settings
     database_connected = False
 
     try:
-        database_connected = check_database_connection(ensure_session_factory(request.app))
+        # El readiness usa el engine async para no quedar detrás del
+        # threadpool de los endpoints sync cuando hay saturación.
+        factory = ensure_async_session_factory(request.app)
+        if factory is None:
+            database_connected = await anyio.to_thread.run_sync(
+                check_database_connection, ensure_session_factory(request.app)
+            )
+        else:
+            async with factory() as session:
+                await session.execute(text("SELECT 1"))
+            database_connected = True
     except Exception as exc:  # pragma: no cover - defensive path for runtime envs
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -114,12 +127,11 @@ def ready(
 
 
 @router.get("/health/ready", response_model=ReadyResponse)
-def ready_alias(
+async def ready_alias(
     request: Request,
-    settings: Settings = Depends(get_settings_dep),
     plugin_registry: PluginManifestRegistry = Depends(get_plugin_registry),
 ) -> ReadyResponse:
-    return ready(request=request, settings=settings, plugin_registry=plugin_registry)
+    return await ready(request=request, plugin_registry=plugin_registry)
 
 
 @router.get("/plugins", response_model=list[PluginManifest])

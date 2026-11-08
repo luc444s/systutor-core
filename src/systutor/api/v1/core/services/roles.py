@@ -13,6 +13,7 @@ from systutor.kernel.permissions.service import (
     replace_role_permissions,
     update_role_for_tenant,
 )
+from systutor.kernel.tenants.context import invalidate_tenant_context_cache
 
 
 def serialize_core_role(db: Session, role: Role) -> dict[str, object]:
@@ -110,6 +111,7 @@ def update_core_role(
         entity_id=role.id,
         payload={"tenant_id": tenant_id, "name": role.name},
     )
+    invalidate_tenant_context_cache(tenant_id)
     return serialize_core_role(db, role)
 
 
@@ -144,4 +146,5 @@ def set_core_role_active(
         entity_id=role.id,
         payload={"tenant_id": tenant_id, "name": role.name, "active": is_active},
     )
+    invalidate_tenant_context_cache(tenant_id)
     return serialize_core_role(db, role)

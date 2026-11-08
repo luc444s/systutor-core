@@ -21,13 +21,20 @@ def record_audit(
     correlation_id: str | None,
     request_id: str | None,
     details: dict,
+    validate_scope: bool = True,
+    flush: bool = True,
 ) -> AuditLog:
-    effective_tenant_id, effective_branch_id = resolve_tenant_scope(
-        db,
-        tenant_id=tenant_id,
-        branch_id=branch_id,
-        actor_user_id=actor_user_id,
-    )
+    if validate_scope:
+        effective_tenant_id, effective_branch_id = resolve_tenant_scope(
+            db,
+            tenant_id=tenant_id,
+            branch_id=branch_id,
+            actor_user_id=actor_user_id,
+        )
+    else:
+        # El caller ya autenticó y resolvió el scope (TenantContext).
+        effective_tenant_id, effective_branch_id = tenant_id, branch_id
+
     audit = AuditLog(
         tenant_id=effective_tenant_id,
         branch_id=effective_branch_id,
@@ -43,5 +50,6 @@ def record_audit(
         details=details,
     )
     db.add(audit)
-    db.flush()
+    if flush:
+        db.flush()
     return audit

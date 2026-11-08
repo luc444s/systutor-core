@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import cast
 
+import anyio.to_thread
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session, sessionmaker
@@ -96,6 +97,11 @@ async def lifespan(app: FastAPI):
     bootstrap_app_state(app, getattr(app.state, "settings", None))
     settings = app.state.settings
     plugin_registry = app.state.plugin_registry
+
+    # Los endpoints sync de FastAPI se ejecutan en el threadpool de AnyIO.
+    # Ajustarlo al pool de base de datos evita colas artificiales.
+    limiter = anyio.to_thread.current_default_thread_limiter()
+    limiter.total_tokens = settings.threadpool_tokens
 
     init_cache(settings.redis_url)
 

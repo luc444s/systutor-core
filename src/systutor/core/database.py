@@ -32,18 +32,35 @@ def _to_async_url(url: str) -> str:
     )
 
 
+def _pool_options(settings: Settings, url: str) -> dict[str, Any]:
+    options: dict[str, Any] = {
+        "pool_pre_ping": settings.db_pool_pre_ping,
+        "pool_timeout": settings.db_pool_timeout,
+        "future": True,
+    }
+    if url.startswith("sqlite"):
+        return options
+    options.update(
+        pool_size=settings.db_pool_size,
+        max_overflow=settings.db_max_overflow,
+        pool_recycle=settings.db_pool_recycle,
+        pool_use_lifo=settings.db_pool_use_lifo,
+    )
+    return options
+
+
 def build_engine(settings: Settings) -> Engine:
     register_model_metadata()
     connect_args: dict[str, Any] = {}
     if settings.database_url.startswith("sqlite"):
         connect_args["check_same_thread"] = False
+    elif settings.database_url.startswith("postgresql") and settings.db_statement_timeout_ms > 0:
+        connect_args["options"] = f"-c statement_timeout={settings.db_statement_timeout_ms}"
 
     return create_engine(
         settings.database_url,
-        pool_pre_ping=True,
-        pool_timeout=3,
-        future=True,
         connect_args=connect_args,
+        **_pool_options(settings, settings.database_url),
     )
 
 
@@ -58,17 +75,38 @@ def build_session_factory(settings: Settings) -> sessionmaker[Session]:
     )
 
 
+def _async_pool_options(settings: Settings, url: str) -> dict[str, Any]:
+    options: dict[str, Any] = {
+        "pool_pre_ping": settings.db_pool_pre_ping,
+        "pool_timeout": settings.db_pool_timeout,
+        "future": True,
+    }
+    if url.startswith("sqlite"):
+        return options
+    options.update(
+        pool_size=settings.db_async_pool_size,
+        max_overflow=settings.db_async_max_overflow,
+        pool_recycle=settings.db_pool_recycle,
+        pool_use_lifo=settings.db_pool_use_lifo,
+    )
+    return options
+
+
 def build_async_engine(settings: Settings) -> AsyncEngine | None:
     """Build an async engine for PostgreSQL only. SQLite has no async support."""
     if not settings.database_url.startswith("postgresql"):
         return None
     register_model_metadata()
     async_url = _to_async_url(settings.database_url)
+    connect_args: dict[str, Any] = {}
+    if settings.db_statement_timeout_ms > 0:
+        connect_args["server_settings"] = {
+            "statement_timeout": str(settings.db_statement_timeout_ms),
+        }
     return create_async_engine(
         async_url,
-        pool_pre_ping=True,
-        pool_timeout=3,
-        future=True,
+        connect_args=connect_args,
+        **_async_pool_options(settings, async_url),
     )
 
 

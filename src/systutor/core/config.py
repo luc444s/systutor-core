@@ -81,6 +81,8 @@ def env_settings_kwargs(env_file: Path | None = DEFAULT_ENV_FILE) -> dict[str, A
         in {"1", "true", "yes", "on"},
         "db_pool_use_lifo": os.getenv("SYSTUTOR_DB_POOL_USE_LIFO", "true").lower()
         in {"1", "true", "yes", "on"},
+        "db_async_pool_size": int(os.getenv("SYSTUTOR_DB_ASYNC_POOL_SIZE", "2")),
+        "db_async_max_overflow": int(os.getenv("SYSTUTOR_DB_ASYNC_MAX_OVERFLOW", "2")),
         "db_statement_timeout_ms": int(os.getenv("SYSTUTOR_DB_STATEMENT_TIMEOUT_MS", "5000")),
         "threadpool_tokens": int(os.getenv("SYSTUTOR_THREADPOOL_TOKENS", "40")),
         "auth_cache_enabled": os.getenv("SYSTUTOR_AUTH_CACHE_ENABLED", "true").lower()
@@ -119,6 +121,8 @@ class Settings(BaseModel):
     db_pool_recycle: int = 1800
     db_pool_pre_ping: bool = True
     db_pool_use_lifo: bool = True
+    db_async_pool_size: int = 2
+    db_async_max_overflow: int = 2
     db_statement_timeout_ms: int = 5000
     threadpool_tokens: int = 40
     auth_cache_enabled: bool = True

@@ -75,6 +75,23 @@ def build_session_factory(settings: Settings) -> sessionmaker[Session]:
     )
 
 
+def _async_pool_options(settings: Settings, url: str) -> dict[str, Any]:
+    options: dict[str, Any] = {
+        "pool_pre_ping": settings.db_pool_pre_ping,
+        "pool_timeout": settings.db_pool_timeout,
+        "future": True,
+    }
+    if url.startswith("sqlite"):
+        return options
+    options.update(
+        pool_size=settings.db_async_pool_size,
+        max_overflow=settings.db_async_max_overflow,
+        pool_recycle=settings.db_pool_recycle,
+        pool_use_lifo=settings.db_pool_use_lifo,
+    )
+    return options
+
+
 def build_async_engine(settings: Settings) -> AsyncEngine | None:
     """Build an async engine for PostgreSQL only. SQLite has no async support."""
     if not settings.database_url.startswith("postgresql"):
@@ -89,7 +106,7 @@ def build_async_engine(settings: Settings) -> AsyncEngine | None:
     return create_async_engine(
         async_url,
         connect_args=connect_args,
-        **_pool_options(settings, async_url),
+        **_async_pool_options(settings, async_url),
     )
 
 

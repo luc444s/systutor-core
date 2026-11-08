@@ -83,6 +83,8 @@ def audit_core_action(
         correlation_id=context.correlation_id,
         request_id=context.request_id,
         details=details,
+        validate_scope=False,
+        flush=False,
     )
 
 
@@ -110,6 +112,7 @@ def emit_core_event(
             payload=payload,
             metadata={"request_id": context.request_id} if context.request_id else {},
         ),
+        validate_scope=False,
     )
 
 

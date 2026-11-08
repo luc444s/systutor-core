@@ -72,13 +72,14 @@ def _health_payload(settings: Settings) -> HealthResponse:
 
 
 @router.get("/health", response_model=HealthResponse)
-def health(settings: Settings = Depends(get_settings_dep)) -> HealthResponse:
-    return _health_payload(settings)
+async def health(request: Request) -> HealthResponse:
+    # Liveness: nunca toca la base de datos ni el threadpool sync.
+    return _health_payload(request.app.state.settings)
 
 
 @router.get("/health/live", response_model=HealthResponse)
-def live_alias(settings: Settings = Depends(get_settings_dep)) -> HealthResponse:
-    return _health_payload(settings)
+async def live_alias(request: Request) -> HealthResponse:
+    return _health_payload(request.app.state.settings)
 
 
 @router.get("/ready", response_model=ReadyResponse)

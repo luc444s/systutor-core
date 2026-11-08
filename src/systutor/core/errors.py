@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
 
 
 class AppError(Exception):
@@ -36,6 +37,20 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "error": {
                     "code": exc.code,
                     "message": exc.message,
+                }
+            },
+        )
+
+    @app.exception_handler(SQLAlchemyTimeoutError)
+    async def handle_db_pool_timeout(_: Request, exc: SQLAlchemyTimeoutError) -> JSONResponse:
+        # El pool está saturado: es una sobrecarga temporal, no un error interno.
+        return JSONResponse(
+            status_code=503,
+            headers={"Retry-After": "1"},
+            content={
+                "error": {
+                    "code": "database_busy",
+                    "message": "Base de datos ocupada. Reintenta en unos segundos.",
                 }
             },
         )

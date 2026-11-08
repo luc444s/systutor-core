@@ -17,6 +17,7 @@ from systutor.kernel.permissions.service import (
     list_user_role_names,
     replace_user_roles,
 )
+from systutor.kernel.tenants.context import invalidate_tenant_context_cache
 from systutor.kernel.tenants.models import Branch
 from systutor.kernel.tenants.service import list_user_warehouse_ids, replace_user_warehouse_ids
 
@@ -205,6 +206,7 @@ def update_core_user(
         entity_id=user.id,
         payload={"email": user.email, "tenant_id": tenant_id},
     )
+    invalidate_tenant_context_cache(tenant_id)
     return serialize_core_user(db, user)
 
 
@@ -239,4 +241,5 @@ def set_core_user_active(
         entity_id=user.id,
         payload={"email": user.email, "tenant_id": tenant_id, "active": is_active},
     )
+    invalidate_tenant_context_cache(tenant_id)
     return serialize_core_user(db, user)

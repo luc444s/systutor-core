@@ -73,6 +73,19 @@ def env_settings_kwargs(env_file: Path | None = DEFAULT_ENV_FILE) -> dict[str, A
             "SYSTUTOR_DATABASE_URL",
             "postgresql+psycopg://postgres:postgres@localhost:5432/systutor",
         ),
+        "db_pool_size": int(os.getenv("SYSTUTOR_DB_POOL_SIZE", "10")),
+        "db_max_overflow": int(os.getenv("SYSTUTOR_DB_MAX_OVERFLOW", "10")),
+        "db_pool_timeout": float(os.getenv("SYSTUTOR_DB_POOL_TIMEOUT", "15")),
+        "db_pool_recycle": int(os.getenv("SYSTUTOR_DB_POOL_RECYCLE", "1800")),
+        "db_pool_pre_ping": os.getenv("SYSTUTOR_DB_POOL_PRE_PING", "true").lower()
+        in {"1", "true", "yes", "on"},
+        "db_pool_use_lifo": os.getenv("SYSTUTOR_DB_POOL_USE_LIFO", "true").lower()
+        in {"1", "true", "yes", "on"},
+        "db_statement_timeout_ms": int(os.getenv("SYSTUTOR_DB_STATEMENT_TIMEOUT_MS", "5000")),
+        "threadpool_tokens": int(os.getenv("SYSTUTOR_THREADPOOL_TOKENS", "40")),
+        "auth_cache_enabled": os.getenv("SYSTUTOR_AUTH_CACHE_ENABLED", "true").lower()
+        in {"1", "true", "yes", "on"},
+        "auth_cache_ttl_seconds": int(os.getenv("SYSTUTOR_AUTH_CACHE_TTL_SECONDS", "30")),
         "redis_url": os.getenv("SYSTUTOR_REDIS_URL", "redis://localhost:6379/0"),
         "outbox_dispatch_batch_size": int(os.getenv("SYSTUTOR_OUTBOX_DISPATCH_BATCH_SIZE", "100")),
         "outbox_max_retries": int(os.getenv("SYSTUTOR_OUTBOX_MAX_RETRIES", "3")),
@@ -100,6 +113,16 @@ class Settings(BaseModel):
     api_prefix: str = "/api/v1"
     log_level: str = "INFO"
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/systutor"
+    db_pool_size: int = 10
+    db_max_overflow: int = 10
+    db_pool_timeout: float = 15.0
+    db_pool_recycle: int = 1800
+    db_pool_pre_ping: bool = True
+    db_pool_use_lifo: bool = True
+    db_statement_timeout_ms: int = 5000
+    threadpool_tokens: int = 40
+    auth_cache_enabled: bool = True
+    auth_cache_ttl_seconds: int = 30
     redis_url: str = "redis://localhost:6379/0"
     outbox_dispatch_batch_size: int = 100
     outbox_max_retries: int = 3

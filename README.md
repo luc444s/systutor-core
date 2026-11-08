@@ -89,6 +89,8 @@ see `.env.example`.
 | `SYSTUTOR_DB_POOL_RECYCLE` | `1800` | Recycle connections after N seconds |
 | `SYSTUTOR_DB_POOL_PRE_PING` | `true` | Validate connections on checkout |
 | `SYSTUTOR_DB_POOL_USE_LIFO` | `true` | Reuse the most recently used connection |
+| `SYSTUTOR_DB_ASYNC_POOL_SIZE` | `2` | Async pool size (readiness) |
+| `SYSTUTOR_DB_ASYNC_MAX_OVERFLOW` | `2` | Async pool overflow (readiness) |
 | `SYSTUTOR_DB_STATEMENT_TIMEOUT_MS` | `5000` | PostgreSQL `statement_timeout` |
 | `SYSTUTOR_THREADPOOL_TOKENS` | `40` | AnyIO threadpool tokens for sync endpoints |
 | `SYSTUTOR_AUTH_CACHE_ENABLED` | `true` | Cache authenticated tenant context |
@@ -103,6 +105,11 @@ workers x (pool_size + max_overflow) <= PostgreSQL max_connections - reserved
 With multiple workers or instances, use PgBouncer (transaction pooling) or
 reduce the per-worker pool. The defaults (10 + 10 = 20 per process) leave room
 for four processes on the default PostgreSQL `max_connections=100`.
+
+`get_db_session` is an async dependency even though the SQLAlchemy session is
+sync: its cleanup runs on the event loop, so a saturated threadpool cannot
+queue the `session.close()` behind requests waiting for a connection. This
+prevents the pool deadlock that appears under high concurrency.
 
 When the pool is saturated, the API returns **503 `database_busy` with
 `Retry-After: 1`** instead of a generic 500.

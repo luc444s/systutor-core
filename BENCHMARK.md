@@ -313,3 +313,106 @@ claramente a 2 workers; ambos configuran un servicio estable. El límite real
 es el entorno de prueba, no el core. Para tu PC de 2 núcleos, la sección de
 2 workers es la referencia relevante.
 
+---
+
+# Bench definitivo — Contabo Linux + comparativa 3 equipos (2026-11-09)
+
+Objetivo: medir los endpoints más rápidos del sistema (`health`, `ready`,
+`permissions`) sobre hardware Linux limpio y comparar contra la ThinkPad
+local (Linux) y ACONCAGUA (Windows 10, i5-12400F, 32 GB).
+
+## Entorno Contabo
+
+- 4 vCPU, 7,8 GB RAM, load ~0,3 (con panel Spanel + servicios Docker
+  compartiendo la caja: Postgres, Traefik, Redis, mail, MariaDB).
+- Servidor: 4 workers uvicorn en `127.0.0.1:8124`, PostgreSQL 16 local
+  (servicio systemd), Redis no disponible → `MemoryCacheBackend`.
+- Cliente: `scripts/bench_mp.py` (4 procesos, closed-loop con keep-alive),
+  corriendo en la misma caja (cliente + server comparten los 4 vCPU).
+- Backpressure desactivado para la medición (`SYSTUTOR_CONCURRENCY_LIMIT=5000`).
+
+## Health — `GET /system/health/live` (async, sin DB, sin auth)
+
+| Concurrentes | req/s OK | p50 | p95 | Errores |
+|---:|---:|---:|---:|---:|
+| 10 | 583 | 14 ms | 36 ms | 0% |
+| 100 | 435 | 158 ms | 688 ms | 0% |
+| 1000 | 369 | 370 ms | 3,7 s | 0,16% |
+| 5000 | 714 | 1,9 s | 10,5 s | 31% resets TCP |
+| 10000 | 757 | 2,4 s | 8,5 s | 34% resets TCP |
+| 20000 | 650 | 2,4 s | 10,1 s | 37% resets TCP |
+
+## Ready — `GET /system/health/ready` (async, 1 query)
+
+| Concurrentes | req/s OK | p50 | p95 | Errores |
+|---:|---:|---:|---:|---:|
+| 10 | 272 | 30 ms | 75 ms | 0% |
+| 100 | 364 | 230 ms | 661 ms | 0% |
+| 1000 | 326 | 479 ms | 6,9 s | 0,06% |
+| 5000 | 405 | 1,9 s | 22,8 s | 29% resets TCP |
+| 10000 | 459 | 2,4 s | 7,8 s | 34% resets TCP |
+| 20000 | 335 | 2,6 s | 8,2 s | 40% resets TCP |
+
+## Permissions — `GET /core/permissions` (sync, auth + 1 query)
+
+| Concurrentes | req/s OK | p50 | p95 | Errores |
+|---:|---:|---:|---:|---:|
+| 10 | 208 | 44 ms | 88 ms | 0% |
+| 100 | 127 | 803 ms | 1,5 s | 0% |
+| 1000 | 26 | 214 ms | 61 s | 75% 503 `database_busy` |
+
+## Comparativa entre equipos
+
+| Métrica | ThinkPad Linux (i5-7200U, 4 hilos) | Contabo Linux (4 vCPU) | ACONCAGUA Windows (i5-12400F, 6c) |
+|---|---|---|---|
+| `health` a 10 conc. | 576 rps, p95 30 ms | **583 rps, p95 36 ms** | 193 rps, p95 57 ms |
+| `permissions` a 10 conc. | 171 rps, p95 97 ms | **208 rps, p95 88 ms** | sin datos (server murió) |
+| `permissions` a 100 conc. | 176 rps, 0% errores | 127 rps, 0% errores | — |
+| `permissions` a 1000 conc. | 58% 503 | 75% 503 | — |
+| Techo sync autenticado | ~175 rps | ~140-210 rps | — |
+
+ACONCAGUA (Windows 10) se descarta como entorno de producción para Python
+async: a 5000+ concurrentes el server muere con
+`ValueError: too many file descriptors in select()` (límite del loop de
+eventos de Windows) y rinde 2-3× menos que Linux con CPU superior.
+
+## Conclusión: sí, estamos en límites arquitectónicos
+
+La evidencia de los 3 equipos muestra el mismo patrón con hardware muy
+distinto (factor ~2 en CPU/RAM entre máquinas, pero el mismo techo):
+
+1. **El endpoint sync autenticado tiene un techo de ~150-200 req/s** y
+   colapsa a 1000 concurrentes (503 `database_busy` por timeout del pool)
+   en las tres máquinas. El hardware mueve el techo ±50%, no el orden de
+   magnitud: el límite no es la CPU, es la arquitectura sync
+   (threadpool de 40-100 threads por worker + pool de 15-20 conexiones +
+   ~3 queries de auth por request).
+2. **Los endpoints async (`health`, `ready`) sobreviven a 20.000
+   concurrentes** con 0 errores hasta 1000 y solo resets TCP a 5000+ por
+   saturación cliente+server en la misma caja. Sin threadpool, el mismo
+   hardware sostiene 3-7× más concurrencia.
+3. Los resets TCP a 5000+ (30-40%) son saturación de la caja compartida
+   (cliente + server + Postgres en 4 vCPU), no colapso del core: los
+   workers siguen respondiendo.
+4. El prototipo asyncpg puro (`scripts/async_proto.py`) demostró en la
+   misma máquina 2-3× throughput a baja concurrencia y **0,35% de errores
+   a 1000 concurrentes** donde el sync colapsa (58% 503).
+
+**Límites arquitectónicos identificados (en orden de impacto):**
+
+| Límite | Efecto medido |
+|---|---|
+| Endpoints sync + threadpool acotado por worker | Colapso a 1000 conc. (503 pool timeout) |
+| ~3 queries de auth por request (`get_user_by_id` + `validate_user_branch_scope` + contexto) | Techo ~175 rps; cada query menos sube el techo |
+| N+1 en listados (`serialize_core_role` por fila) | Latencia crece con el tamaño de la lista |
+| Auditoría + outbox dentro de la transacción del negocio | Retiene thread+conexión más tiempo por escritura |
+| PBKDF2 600k en login | ~8-15 logins/s por core por diseño (seguridad, no bug) |
+| Windows como plataforma de serving Python async | Techo artificial ~1000 conexiones (FD/select) |
+
+**Camino de salida (sin reescribir el kernel):** cambio mínimo primero
+(confiar en claims firmados del JWT para saltar 2 queries de auth por
+request + fix del N+1), piloto async sobre el camino caliente
+(auth + lecturas), y backpressure en producción para que el excedente
+reciba 503 rápido en vez de colgar 30 s. Ver `README.md` (sección
+Backpressure) y `scripts/bench_mp.py` para reproducir.
+

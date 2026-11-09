@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from systutor.api.v1.core import router as core_router
 from systutor.api.v1.system import router as system_router
+from systutor.core.concurrency import ConcurrencyLimitMiddleware
 from systutor.core.config import Settings, get_settings
 from systutor.core.errors import register_exception_handlers
 from systutor.core.lifecycle import bootstrap_app_state, lifespan
@@ -30,6 +31,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["*"],
     )
     app.add_middleware(RequestContextMiddleware)
+    # Added last so it runs first (outermost): rejects excess requests
+    # with 503 + Retry-After before they queue for seconds.
+    app.add_middleware(
+        ConcurrencyLimitMiddleware,
+        limit=effective_settings.concurrency_limit,
+        retry_after_seconds=effective_settings.concurrency_retry_after_seconds,
+    )
 
     api_router = APIRouter()
     api_router.include_router(auth_router)

@@ -93,6 +93,8 @@ see `.env.example`.
 | `SYSTUTOR_DB_ASYNC_MAX_OVERFLOW` | `2` | Async pool overflow (readiness) |
 | `SYSTUTOR_DB_STATEMENT_TIMEOUT_MS` | `5000` | PostgreSQL `statement_timeout` |
 | `SYSTUTOR_THREADPOOL_TOKENS` | `40` | AnyIO threadpool tokens for sync endpoints |
+| `SYSTUTOR_CONCURRENCY_LIMIT` | `40` (per worker) | Max in-flight HTTP requests per process; excess gets immediate 503 + `Retry-After`. Defaults to `SYSTUTOR_THREADPOOL_TOKENS`. `0` disables |
+| `SYSTUTOR_CONCURRENCY_RETRY_AFTER_SECONDS` | `1` | `Retry-After` value sent with 503 `overloaded` responses |
 | `SYSTUTOR_AUTH_CACHE_ENABLED` | `true` | Cache authenticated tenant context |
 | `SYSTUTOR_AUTH_CACHE_TTL_SECONDS` | `30` | TTL for the auth/permission cache |
 
@@ -113,6 +115,27 @@ prevents the pool deadlock that appears under high concurrency.
 
 When the pool is saturated, the API returns **503 `database_busy` with
 `Retry-After: 1`** instead of a generic 500.
+
+### Backpressure (concurrency limit)
+
+Accepting every request only moves the wait into a queue:
+`latency ~= concurrency / throughput` (e.g. 2000 concurrent requests at
+~68 writes/s ~= 29 s for the last request in line). To avoid that,
+`ConcurrencyLimitMiddleware` admits at most `SYSTUTOR_CONCURRENCY_LIMIT`
+requests per process and rejects the rest **immediately** with
+**503 `overloaded` + `Retry-After: 1`**. A fast rejection clients can
+retry is better than a request hanging for tens of seconds.
+
+- The limit is **per uvicorn worker**: total admitted concurrency is
+  `limit x workers`. Keep it at or below `SYSTUTOR_THREADPOOL_TOKENS` so
+  rejection happens before requests pile up in the threadpool or the
+  connection pool. For a 2-core target with 2 workers: `limit 40 x 2 = 80`.
+- Liveness probes (`/system/health`, `/system/health/live`) bypass the
+  limiter so load balancers do not kill a healthy process.
+- Belt and braces at the server: also start uvicorn with
+  `--limit-concurrency <limit x workers>` so excess connections are
+  refused at the socket level, e.g.
+  `uvicorn app.main:app --workers 2 --limit-concurrency 80`.
 
 `GET /system/health/live` is an async liveness probe that never touches the
 database. `GET /system/ready` uses the async engine to check PostgreSQL, so a

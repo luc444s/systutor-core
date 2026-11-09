@@ -59,6 +59,7 @@ def env_settings_kwargs(env_file: Path | None = DEFAULT_ENV_FILE) -> dict[str, A
             "http://localhost:5173,http://127.0.0.1:5173",
         )
     )
+    threadpool_tokens = int(os.getenv("SYSTUTOR_THREADPOOL_TOKENS", "40"))
     return {
         "app_name": os.getenv("SYSTUTOR_APP_NAME", "SYSTUTOR API"),
         "env": cast(
@@ -84,7 +85,16 @@ def env_settings_kwargs(env_file: Path | None = DEFAULT_ENV_FILE) -> dict[str, A
         "db_async_pool_size": int(os.getenv("SYSTUTOR_DB_ASYNC_POOL_SIZE", "2")),
         "db_async_max_overflow": int(os.getenv("SYSTUTOR_DB_ASYNC_MAX_OVERFLOW", "2")),
         "db_statement_timeout_ms": int(os.getenv("SYSTUTOR_DB_STATEMENT_TIMEOUT_MS", "5000")),
-        "threadpool_tokens": int(os.getenv("SYSTUTOR_THREADPOOL_TOKENS", "40")),
+        "threadpool_tokens": threadpool_tokens,
+        # Per-process concurrency limit for backpressure. Defaults to the
+        # threadpool size so requests are rejected before they can queue
+        # behind each other for seconds (latency ~= concurrency / throughput).
+        "concurrency_limit": int(
+            os.getenv("SYSTUTOR_CONCURRENCY_LIMIT", str(threadpool_tokens))
+        ),
+        "concurrency_retry_after_seconds": int(
+            os.getenv("SYSTUTOR_CONCURRENCY_RETRY_AFTER_SECONDS", "1")
+        ),
         "auth_cache_enabled": os.getenv("SYSTUTOR_AUTH_CACHE_ENABLED", "true").lower()
         in {"1", "true", "yes", "on"},
         "auth_cache_ttl_seconds": int(os.getenv("SYSTUTOR_AUTH_CACHE_TTL_SECONDS", "30")),
@@ -125,6 +135,8 @@ class Settings(BaseModel):
     db_async_max_overflow: int = 2
     db_statement_timeout_ms: int = 5000
     threadpool_tokens: int = 40
+    concurrency_limit: int = 40
+    concurrency_retry_after_seconds: int = 1
     auth_cache_enabled: bool = True
     auth_cache_ttl_seconds: int = 30
     redis_url: str = "redis://localhost:6379/0"
